@@ -1,0 +1,41 @@
+application "indieops-ai" {
+
+  # Asynchronous queue for sending notifications
+  queue "notifications" {}
+
+  observer "notification-handler" {
+    # Observer for queue messages
+    source {
+      queue = "notifications"
+    }
+  }
+
+  # Storage for contracts, receipts, and invoices
+  smartbucket "documents" {}
+
+  # Stores client details and relationship context
+  smartmemory "agent_memory" {}
+
+  # Stores financial records extracted from docs
+  smartsql "ssql-demo" {}
+
+  # Public endpoint to receive data or file upload URLs
+  service "api-gateway" {
+    visibility = "public"
+  }
+
+  # The core brain for extraction and advisory
+  service "biz-brain" {
+    visibility = "public"
+    domain {
+      cname = "biz-brain.indieops.ai"
+    }
+  }
+
+  # The "Daily Brief" - runs daily at 8:00 AM
+  task "daily-brief" {
+    type = "cron"
+    cron = "0 8 * * *"
+  }
+
+}
