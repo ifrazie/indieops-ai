@@ -1,10 +1,7 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { QueueSendOptions } from '@liquidmetal-ai/raindrop-framework';
-import { KvCachePutOptions, KvCacheGetOptions } from '@liquidmetal-ai/raindrop-framework';
-import { BucketPutOptions, BucketListOptions } from '@liquidmetal-ai/raindrop-framework';
+import { QueueSendOptions, BucketPutOptions, BucketListOptions } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
 
 // Create Hono app with middleware
@@ -18,87 +15,7 @@ app.get('/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// === Basic API Routes ===
-app.get('/api/hello', (c) => {
-  return c.json({ message: 'Hello from Hono!' });
-});
-
-app.get('/api/hello/:name', (c) => {
-  const name = c.req.param('name');
-  return c.json({ message: `Hello, ${name}!` });
-});
-
-// Example POST endpoint
-app.post('/api/echo', async (c) => {
-  const body = await c.req.json();
-  return c.json({ received: body });
-});
-
-// === RPC Examples: Service calling Actor ===
-// Example: Call an actor method
-/*
-app.post('/api/actor-call', async (c) => {
-  try {
-    const { message, actorName } = await c.req.json();
-
-    if (!actorName) {
-      return c.json({ error: 'actorName is required' }, 400);
-    }
-
-    // Get actor namespace and create actor instance
-    // Note: Replace MY_ACTOR with your actual actor binding name
-    const actorNamespace = c.env.MY_ACTOR; // This would be bound in raindrop.manifest
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Call actor method (assuming actor has a 'processMessage' method)
-    const response = await actor.processMessage(message);
-
-    return c.json({
-      success: true,
-      actorName,
-      response
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to call actor',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get actor state
-/*
-app.get('/api/actor-state/:actorName', async (c) => {
-  try {
-    const actorName = c.req.param('actorName');
-
-    // Get actor instance
-    const actorNamespace = c.env.MY_ACTOR;
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Get actor state (assuming actor has a 'getState' method)
-    const state = await actor.getState();
-
-    return c.json({
-      success: true,
-      actorName,
-      state
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to get actor state',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === SmartBucket Examples ===
-// Example: Upload file to SmartBucket
-/*
+// Upload document to SmartBucket
 app.post('/api/upload', async (c) => {
   try {
     const formData = await c.req.formData();
@@ -109,8 +26,8 @@ app.post('/api/upload', async (c) => {
       return c.json({ error: 'No file provided' }, 400);
     }
 
-    // Upload to SmartBucket (Replace MY_SMARTBUCKET with your binding name)
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    // Upload to DOCUMENTS SmartBucket
+    const smartbucket = c.env.DOCUMENTS;
     const arrayBuffer = await file.arrayBuffer();
 
     const putOptions: BucketPutOptions = {
@@ -129,10 +46,12 @@ app.post('/api/upload', async (c) => {
 
     return c.json({
       success: true,
-      message: 'File uploaded successfully',
-      key: result.key,
+      message: 'File uploaded successfully. Document is being processed for search and chat.',
+      objectId: file.name,
       size: result.size,
-      etag: result.etag
+      etag: result.etag,
+      contentType: file.type || 'application/octet-stream',
+      description: description || ''
     });
   } catch (error) {
     return c.json({
@@ -141,16 +60,14 @@ app.post('/api/upload', async (c) => {
     }, 500);
   }
 });
-*/
 
-// Example: Get file from SmartBucket
-/*
+// Get file from SmartBucket
 app.get('/api/file/:filename', async (c) => {
   try {
     const filename = c.req.param('filename');
 
-    // Get file from SmartBucket
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    // Get file from DOCUMENTS SmartBucket
+    const smartbucket = c.env.DOCUMENTS;
     const file = await smartbucket.get(filename);
 
     if (!file) {
@@ -173,26 +90,47 @@ app.get('/api/file/:filename', async (c) => {
     }, 500);
   }
 });
-*/
 
-// Example: Search SmartBucket documents
-/*
+// Delete document from SmartBucket
+app.delete('/api/file/:filename', async (c) => {
+  try {
+    const filename = c.req.param('filename');
+
+    // Delete from DOCUMENTS SmartBucket
+    const smartbucket = c.env.DOCUMENTS;
+    await smartbucket.delete(filename);
+
+    return c.json({
+      success: true,
+      message: 'Document deleted successfully',
+      objectId: filename
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to delete file',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// Search SmartBucket documents
 app.post('/api/search', async (c) => {
   try {
-    const { query, page = 1, pageSize = 10 } = await c.req.json();
+    const body = await c.req.json();
+    const { query, page = 1, pageSize = 10, requestId } = body;
 
     if (!query) {
       return c.json({ error: 'Query is required' }, 400);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    const smartbucket = c.env.DOCUMENTS;
 
     // For initial search
     if (page === 1) {
-      const requestId = `search-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      const newRequestId = `search-${Date.now()}-${Math.random().toString(36).substring(7)}`;
       const results = await smartbucket.search({
         input: query,
-        requestId
+        requestId: newRequestId
       });
 
       return c.json({
@@ -202,12 +140,11 @@ app.post('/api/search', async (c) => {
         results: results.results,
         pagination: {
           ...results.pagination,
-          requestId
+          requestId: newRequestId
         }
       });
     } else {
       // For paginated results
-      const { requestId } = await c.req.json();
       if (!requestId) {
         return c.json({ error: 'Request ID required for pagination' }, 400);
       }
@@ -233,10 +170,8 @@ app.post('/api/search', async (c) => {
     }, 500);
   }
 });
-*/
 
-// Example: Chunk search for finding specific sections
-/*
+// Chunk search for finding specific sections
 app.post('/api/chunk-search', async (c) => {
   try {
     const { query } = await c.req.json();
@@ -245,7 +180,7 @@ app.post('/api/chunk-search', async (c) => {
       return c.json({ error: 'Query is required' }, 400);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    const smartbucket = c.env.DOCUMENTS;
     const requestId = `chunk-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
     const results = await smartbucket.chunkSearch({
@@ -266,10 +201,49 @@ app.post('/api/chunk-search', async (c) => {
     }, 500);
   }
 });
-*/
 
-// Example: Document chat/Q&A
-/*
+// Verify document is indexed and ready
+app.get('/api/document-status/:objectId', async (c) => {
+  try {
+    const objectId = c.req.param('objectId');
+    const smartbucket = c.env.DOCUMENTS;
+
+    // Check if file exists
+    const metadata = await smartbucket.head(objectId);
+    if (!metadata) {
+      return c.json({ error: 'Document not found' }, 404);
+    }
+
+    // Try a simple chunk search to see if indexed
+    const requestId = `status-${Date.now()}`;
+    const testSearch = await smartbucket.chunkSearch({
+      input: 'document',
+      requestId
+    });
+
+    const hasChunks = testSearch.results.some((r: any) => 
+      r.source === objectId || r.key === objectId
+    );
+
+    return c.json({
+      objectId,
+      exists: true,
+      size: metadata.size,
+      uploaded: metadata.uploaded,
+      indexed: hasChunks,
+      message: hasChunks 
+        ? 'Document is indexed and ready for chat' 
+        : 'Document exists but may still be processing. Try again in 30-60 seconds.'
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Status check failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// Document chat/Q&A - uses SmartBucket's built-in documentChat
 app.post('/api/document-chat', async (c) => {
   try {
     const { objectId, query } = await c.req.json();
@@ -278,9 +252,19 @@ app.post('/api/document-chat', async (c) => {
       return c.json({ error: 'objectId and query are required' }, 400);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    const smartbucket = c.env.DOCUMENTS;
     const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
+    // First verify document exists
+    const metadata = await smartbucket.head(objectId);
+    if (!metadata) {
+      return c.json({
+        error: 'Document not found',
+        message: 'The specified objectId does not exist in the bucket.'
+      }, 404);
+    }
+
+    // Use SmartBucket's documentChat method
     const response = await smartbucket.documentChat({
       objectId,
       input: query,
@@ -297,21 +281,20 @@ app.post('/api/document-chat', async (c) => {
   } catch (error) {
     return c.json({
       error: 'Document chat failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : 'Unknown error',
+      hint: 'Document may still be processing. Check /api/document-status/:objectId to verify indexing status.'
     }, 500);
   }
 });
-*/
 
-// Example: List objects in bucket
-/*
+// List objects in bucket
 app.get('/api/list', async (c) => {
   try {
     const url = new URL(c.req.url);
     const prefix = url.searchParams.get('prefix') || undefined;
     const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    const smartbucket = c.env.DOCUMENTS;
 
     const listOptions: BucketListOptions = {
       prefix,
@@ -338,77 +321,8 @@ app.get('/api/list', async (c) => {
     }, 500);
   }
 });
-*/
 
-// === KV Cache Examples ===
-// Example: Store data in KV cache
-/*
-app.post('/api/cache', async (c) => {
-  try {
-    const { key, value, ttl } = await c.req.json();
-
-    if (!key || value === undefined) {
-      return c.json({ error: 'key and value are required' }, 400);
-    }
-
-    const cache = c.env.MY_CACHE;
-
-    const putOptions: KvCachePutOptions = {};
-    if (ttl) {
-      putOptions.expirationTtl = ttl;
-    }
-
-    await cache.put(key, JSON.stringify(value), putOptions);
-
-    return c.json({
-      success: true,
-      message: 'Data cached successfully',
-      key
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache put failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get data from KV cache
-/*
-app.get('/api/cache/:key', async (c) => {
-  try {
-    const key = c.req.param('key');
-
-    const cache = c.env.MY_CACHE;
-
-    const getOptions: KvCacheGetOptions<'json'> = {
-      type: 'json'
-    };
-
-    const value = await cache.get(key, getOptions);
-
-    if (value === null) {
-      return c.json({ error: 'Key not found in cache' }, 404);
-    }
-
-    return c.json({
-      success: true,
-      key,
-      value
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache get failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Queue Examples ===
-// Example: Send message to queue
-/*
+// Send notification message to queue
 app.post('/api/queue/send', async (c) => {
   try {
     const { message, delaySeconds } = await c.req.json();
@@ -417,7 +331,7 @@ app.post('/api/queue/send', async (c) => {
       return c.json({ error: 'message is required' }, 400);
     }
 
-    const queue = c.env.MY_QUEUE;
+    const queue = c.env.NOTIFICATIONS;
 
     const sendOptions: QueueSendOptions = {};
     if (delaySeconds) {
@@ -436,23 +350,6 @@ app.post('/api/queue/send', async (c) => {
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
-});
-*/
-
-// === Environment Variable Examples ===
-app.get('/api/config', (c) => {
-  return c.json({
-    hasEnv: !!c.env,
-    availableBindings: {
-      // These would be true if the resources are bound in raindrop.manifest
-      // MY_ACTOR: !!c.env.MY_ACTOR,
-      // MY_SMARTBUCKET: !!c.env.MY_SMARTBUCKET,
-      // MY_CACHE: !!c.env.MY_CACHE,
-      // MY_QUEUE: !!c.env.MY_QUEUE,
-    },
-    // Example access to environment variables:
-    // MY_SECRET_VAR: c.env.MY_SECRET_VAR // This would be undefined if not set
-  });
 });
 
 export default class extends Service<Env> {

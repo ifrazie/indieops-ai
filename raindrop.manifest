@@ -22,6 +22,9 @@ application "indieops-ai" {
   # Public endpoint to receive data or file upload URLs
   service "api-gateway" {
     visibility = "public"
+    domain {
+      cname = "api.indieops.ai"
+    }
   }
 
   # The core brain for extraction and advisory
