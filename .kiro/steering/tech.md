@@ -1,36 +1,29 @@
 # Technology Stack
 
-## Framework & Runtime
+## Platform
 
-- **Raindrop Framework** (`@liquidmetal-ai/raindrop-framework` v0.11.0): Core application framework
-- **Hono.js** (v4): Lightweight web framework for HTTP services
-- **TypeScript** (v5.0.4): Primary language with strict mode enabled
-- **Node.js**: 18+ required
+**Raindrop Framework** (`@liquidmetal-ai/raindrop-framework` v0.11.0) - Serverless platform for AI-powered applications with built-in SmartBucket, SmartMemory, and SmartSQL capabilities.
 
-## Key Dependencies
+## Runtime & Language
 
-- **Kysely** (v0.27.2): Type-safe SQL query builder
-- **Kysely-D1** (v0.3.0): D1 database adapter
-- **Zod** (v3): Schema validation
-- **MCP SDK** (`@modelcontextprotocol/sdk` v1): Model Context Protocol integration
+- **TypeScript 5.0.4** with strict mode enabled
+- **Node.js 18+** required
+- **ES2022** module system and target
+
+## Core Dependencies
+
+- **Hono 4.x** - Lightweight web framework for HTTP services
+- **Zod 3.x** - Runtime type validation and schema definition
+- **Kysely 0.27.2** - Type-safe SQL query builder
+- **kysely-d1 0.3.0** - Kysely dialect for Cloudflare D1
+- **@modelcontextprotocol/sdk 1.x** - Model Context Protocol integration
 
 ## Development Tools
 
-- **Vitest** (v3.1.3): Testing framework
-- **TypeScript ESLint** (v8.7.0): Linting
-- **Prettier**: Code formatting
-- **shx**: Cross-platform shell commands
-
-## Build System
-
-TypeScript compilation with ES2022 target and module system. Output goes to `dist/` directory.
-
-### Compiler Configuration
-
-- Module: ES2022 with Bundler resolution
-- Strict mode enabled
-- No unchecked indexed access
-- Isolated modules for better performance
+- **Vitest 3.1.3** - Unit testing framework
+- **TypeScript ESLint 8.7.0** - Linting
+- **Prettier** - Code formatting
+- **shx** - Cross-platform shell commands
 
 ## Common Commands
 
@@ -40,6 +33,8 @@ npm run build
 
 # Deploy and start application
 npm run start
+# or
+raindrop build deploy --start
 
 # Stop application
 npm run stop
@@ -47,10 +42,10 @@ npm run stop
 # Restart (redeploy)
 npm run restart
 
-# Run tests once
+# Run tests
 npm test
 
-# Run tests in watch mode
+# Watch mode tests
 npm run test:watch
 
 # Format code
@@ -58,28 +53,28 @@ npm run format
 
 # Lint code
 npm run lint
-```
 
-## Raindrop CLI Commands
-
-```bash
 # Validate manifest
 raindrop build validate
 
-# Generate types and scaffolding
+# Generate types from manifest
 raindrop build generate
-
-# Deploy application
-raindrop build deploy --start
-
-# Check status
-raindrop build status
 
 # View logs
 raindrop logs tail
-raindrop logs query --since 30s
+
+# Check deployment status
+raindrop build status
 ```
 
-## Database Migrations
+## TypeScript Configuration
 
-Migrations are stored in `db/<db_name>/` with naming pattern `NNNN_description.sql`. They execute automatically during deployment in alphabetical order.
+- Strict mode enabled with `noUncheckedIndexedAccess`
+- ES2022 lib and module system
+- Bundler module resolution
+- Declaration files generated
+- Isolated modules for better performance
+
+## Raindrop Resources
+
+All Raindrop resources (SmartBucket, SmartMemory, SmartSQL, queues) are accessed via environment bindings. Resource names from the manifest are converted to uppercase with underscores (e.g., `documents` → `env.DOCUMENTS`).

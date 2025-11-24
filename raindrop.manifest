@@ -19,6 +19,8 @@ application "indieops-ai" {
   # Stores financial records extracted from docs
   smartsql "ssql-demo" {}
 
+  kv_cache "demo-kv-cache" {}
+
   # Public endpoint to receive data or file upload URLs
   service "api-gateway" {
     visibility = "public"
