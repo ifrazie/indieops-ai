@@ -92,12 +92,28 @@ app.post('/api/upload', async (c) => {
       return c.json({ error: 'No file provided' }, 400);
     }
 
+    console.log('[UPLOAD] File details:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    });
+
     // Upload to DOCUMENTS SmartBucket
     const smartbucket = c.env.DOCUMENTS;
 
+    // Ensure proper content type for SmartBucket indexing
+    const contentType = file.type || 'application/octet-stream';
+    
+    // Supported types: image/png, image/jpeg, audio/webm, audio/mpeg, audio/wav, audio/mp4, application/pdf, text/plain
+    const supportedTypes = ['image/png', 'image/jpeg', 'audio/webm', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'application/pdf', 'text/plain'];
+    
+    if (!supportedTypes.includes(contentType)) {
+      console.warn('[UPLOAD] Unsupported content type:', contentType);
+    }
+
     const putOptions: BucketPutOptions = {
       httpMetadata: {
-        contentType: file.type || 'application/octet-stream',
+        contentType,
       },
       customMetadata: {
         originalName: file.name,
@@ -107,8 +123,16 @@ app.post('/api/upload', async (c) => {
       }
     };
 
+    console.log('[UPLOAD] Uploading with options:', putOptions);
+
     // SmartBucket accepts Blob directly - no need to convert
     const result = await smartbucket.put(file.name, file, putOptions);
+
+    console.log('[UPLOAD] Upload result:', {
+      key: result.key,
+      size: result.size,
+      contentType: result.httpMetadata?.contentType
+    });
 
     return c.json({
       success: true,
@@ -359,18 +383,18 @@ app.get('/api/document-status/:objectId', async (c) => {
 
 // Document chat/Q&A - uses SmartBucket's built-in documentChat
 app.post('/api/document-chat', async (c) => {
+  const { objectId, query } = await c.req.json();
+
+  if (!objectId || !query) {
+    return c.json({ error: 'objectId and query are required' }, 400);
+  }
+
+  const smartbucket = c.env.DOCUMENTS;
+  const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+  console.log('[DOCUMENT-CHAT] Starting:', { objectId, query, requestId });
+
   try {
-    const { objectId, query } = await c.req.json();
-
-    if (!objectId || !query) {
-      return c.json({ error: 'objectId and query are required' }, 400);
-    }
-
-    const smartbucket = c.env.DOCUMENTS;
-    const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-
-    console.log('[DOCUMENT-CHAT] Starting:', { objectId, query, requestId });
-
     // First verify document exists
     const metadata = await smartbucket.head(objectId);
     if (!metadata) {
@@ -387,44 +411,19 @@ app.post('/api/document-chat', async (c) => {
       }, 404);
     }
 
+    const timeSinceUpload = Date.now() - new Date(metadata.uploaded).getTime();
+    const secondsSinceUpload = Math.floor(timeSinceUpload / 1000);
+
     console.log('[DOCUMENT-CHAT] Document exists:', {
       size: metadata.size,
       uploaded: metadata.uploaded,
-      contentType: metadata.httpMetadata?.contentType
+      secondsSinceUpload,
+      contentType: metadata.httpMetadata?.contentType,
+      customMetadata: metadata.customMetadata
     });
 
-    // Check if document is indexed by doing a targeted chunk search
-    const indexCheckRequestId = `index-check-${Date.now()}`;
-    const indexCheck = await smartbucket.chunkSearch({
-      input: objectId,
-      requestId: indexCheckRequestId
-    });
-
-    const isIndexed = indexCheck.results.some((r: any) => 
-      r.source === objectId || r.key === objectId
-    );
-
-    console.log('[DOCUMENT-CHAT] Index check:', {
-      isIndexed,
-      chunkCount: indexCheck.results.length,
-      sources: indexCheck.results.map((r: any) => r.source || r.key)
-    });
-
-    if (!isIndexed) {
-      const timeSinceUpload = Date.now() - new Date(metadata.uploaded).getTime();
-      const secondsSinceUpload = Math.floor(timeSinceUpload / 1000);
-      
-      return c.json({
-        error: 'Document not yet indexed',
-        message: `Document exists but is still being processed. Uploaded ${secondsSinceUpload}s ago.`,
-        objectId,
-        uploaded: metadata.uploaded,
-        secondsSinceUpload,
-        hint: 'Wait 30-60 seconds after upload, then try again.'
-      }, 425); // 425 Too Early
-    }
-
-    // Use SmartBucket's documentChat method
+    // SmartBucket's documentChat works automatically after upload
+    // No need to check indexing status - just call it
     const response = await smartbucket.documentChat({
       objectId,
       input: query,
@@ -433,7 +432,8 @@ app.post('/api/document-chat', async (c) => {
 
     console.log('[DOCUMENT-CHAT] Response received:', {
       answerLength: response.answer?.length || 0,
-      answer: response.answer?.substring(0, 100)
+      answer: response.answer?.substring(0, 200),
+      fullAnswer: response.answer
     });
 
     return c.json({
@@ -445,11 +445,13 @@ app.post('/api/document-chat', async (c) => {
     });
   } catch (error) {
     console.error('[DOCUMENT-CHAT] Error:', error);
+    
     return c.json({
       error: 'Document chat failed',
       message: error instanceof Error ? error.message : 'Unknown error',
       details: error instanceof Error ? error.stack : undefined,
-      hint: 'Document may still be processing. Check /api/document-status/:objectId to verify indexing status.'
+      objectId,
+      hint: 'If document was recently uploaded, SmartBucket may still be processing. Wait 30-60 seconds and try again.'
     }, 500);
   }
 });
