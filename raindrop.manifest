@@ -17,24 +17,23 @@ application "indieops-ai" {
   smartmemory "agent_memory" {}
 
   # Stores financial records extracted from docs
-  smartsql "ssql-demo" {}
+  smartsql "ssql" {}
 
-  kv_cache "demo-kv-cache" {}
+  kv_cache "kv-cache" {}
 
   # Public endpoint to receive data or file upload URLs
   service "api-gateway" {
     visibility = "public"
-    domain {
-      cname = "api.indieops.ai"
-    }
   }
 
   # The core brain for extraction and advisory
-  service "biz-brain" {
+  service "llm-chat" {
     visibility = "public"
-    domain {
-      cname = "biz-brain.indieops.ai"
-    }
+  }
+
+  # MCP
+  mcp_service "mcp" {
+    visibility = "public"
   }
 
   # The "Daily Brief" - runs daily at 8:00 AM
